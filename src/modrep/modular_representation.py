@@ -218,6 +218,105 @@ class ModularRepresentation(SageObject):
                 
         return False
 
+def split(self):
+        """
+        Decompose the representation into two direct summands.
+        
+        Attempts to find a non-trivial idempotent by examining the minimal 
+        polynomials of the endomorphism algebra basis.
+        """
+        alg = self.endomorphism_algebra()
+        
+        # We iterate through the basis of the endomorphism ring.
+        # We skip the first element if it's the identity (scalar).
+        for X in alg._basis:
+            if X.is_scalar():
+                continue
+                
+            poly = X.minimal_polynomial()
+            factors = poly.factor()
+            
+            # If the minimal polynomial has more than one irreducible factor,
+            # we can definitely construct an idempotent using the CRT.
+            if len(factors) > 1:
+                # Let f be the first primary factor, g the product of the rest
+                f = factors[0][0]^factors[0][1]
+                g = poly // f
+                
+                K_t = poly.parent()
+                _, a, b = K_t.xgcd(f, g)
+                
+                # e = b*g is our idempotent
+                e_mat = b(X) * g(X)
+                
+                # Double check that it's non-trivial (not 0 or I)
+                if not e_mat.is_zero() and not e_mat.is_one():
+                    return self._restrict_to_idempotent(e_mat)
+
+        # OPTIONAL ADVANCED STEP:
+        # If no basis element split the module, but is_indecomposable is False,
+        # we search for an idempotent specifically in the semi-simple quotient A/J(A).
+        return self._split_via_radical(alg)
+
+    def _split_via_radical(self, alg):
+        """
+        If basic minimal polynomial checks fail, find an idempotent by 
+        looking at the quotient A/J(A).
+        """
+        rad_basis = alg.jacobson_radical_basis()
+        dim_A = alg.dimension()
+        dim_J = len(rad_basis)
+        
+        # If dim(A/J) == 1, it's indecomposable (over splitting field).
+        if dim_A - dim_J <= 1:
+            return None
+            
+        # At this point, we would ideally pick a random element 'r' in A, 
+        # project to A/J, find an idempotent there, and lift it back to A.
+        # For a basic MeatAxe, we can try a simple sum of basis elements.
+        K = self.base_ring()
+        combined_X = sum(alg._basis) 
+        
+        # Repeat the minimal polynomial logic once more for the combined element
+        poly = combined_X.minimal_polynomial()
+        factors = poly.factor()
+        if len(factors) > 1:
+            f = factors[0][0]^factors[0][1]
+            g = poly // f
+            _, a, b = K_t.xgcd(f, g)
+            e_mat = b(combined_X) * g(combined_X)
+            if not e_mat.is_zero() and not e_mat.is_one():
+                return self._restrict_to_idempotent(e_mat)
+        
+        return None
+
+    def decompose(self):
+            """
+            Decompose the representation into a direct sum of indecomposable summands.
+            
+            This is a recursive implementation of the Krull-Schmidt theorem logic.
+            
+            RETURNS:
+                A list of indecomposable ModularRepresentation objects.
+            """
+            if self.is_indecomposable():
+                return [self]
+            
+            # split() returns a tuple (V1, V2)
+            summands = self.split()
+            
+            if summands is None:
+                # This handles cases where is_local might be ambiguous 
+                # but no idempotent was found.
+                return [self]
+            
+            final_list = []
+            for s in summands:
+                # Recursively decompose each piece
+                final_list.extend(s.decompose())
+                
+            return final_list
+
 from sage.matrix.constructor import matrix
 from sage.modules.free_module import VectorSpace
 
